@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+torch
+numpy
+pandas
+pyspaceweather
+pydantic
+python-multipart
