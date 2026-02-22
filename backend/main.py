@@ -4,45 +4,41 @@ import torch
 import os
 import sys
 
-# Add ml folder to path so we can find pinn.py
 sys.path.append(os.path.join(os.path.dirname(__file__), "ml"))
 from pinn import SolapsePINN
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Hackathon-grade CORS (Allow everything)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Load the Brain
 model = SolapsePINN()
-current_dir = os.path.dirname(os.path.abspath(__file__))
-weights_path = os.path.join(current_dir, "weights", "solapse_v1.pth")
+weights_path = os.path.join(os.path.dirname(__file__), "weights", "solapse_v1.pth")
 
 if os.path.exists(weights_path):
-    model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(weights_path))
     model.eval()
-    print(f"Successfully loaded PINN weights from {weights_path}")
-else:
-    print(f"CRITICAL ERROR: Weights not found at {weights_path}. Run train.py first!")
+    print("PINN Brain Active.")
 
 @app.post("/predict")
 async def predict(data: dict):
-    # Normalize inputs to 0-1 range to match PINN training
+    # CRITICAL: Normalize inputs to [0, 1] range to match training
+    # Alt: 200 to 800 -> 0 to 1
     h = (data['altitude'] - 200) / 600
+    # Flux: 70 to 300 -> 0 to 1
     f = (data['f107'] - 70) / 230
+    # Kp: 0 to 9 -> 0 to 1
     k = data['kp'] / 9.0
     
-    input_tensor = torch.tensor([[h, f, k]], dtype=torch.float32)
+    # Clamp values to prevent out-of-bounds errors
+    h = max(0, min(1, h))
+    f = max(0, min(1, f))
+    k = max(0, min(1, k))
+
+    input_t = torch.tensor([[h, f, k]], dtype=torch.float32)
     
     with torch.no_grad():
-        prediction = model(input_tensor).item()
+        density = model(input_t).item()
         
-    return {"density": prediction}
+    return {"density": density}
 
 if __name__ == "__main__":
     import uvicorn
